@@ -206,5 +206,4 @@
     kintone.events.on('app.record.create.show', initShow);
     kintone.events.on(eventList, handler);
 
-
   })();
