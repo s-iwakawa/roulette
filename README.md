@@ -1,4 +1,5 @@
 <img src="https://img.shields.io/github/stars/s-iwakawa/roulette?style=plastic">
+
 ## kintone jsカスタマイズ **ルーレット編**
 ### プロジェクトの概要
 本プロジェクトは、「日々の業務を楽しく、公平な割り振りを」をコンセプトとしたkintone jsカスタマイズ企画です。
