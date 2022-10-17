@@ -178,9 +178,9 @@
   };
 
   //データ保持用のフィールドに反映する関数
-  const reflectResult = (selectedLabel, revolution, record) => {
+  const reflectResult = (selectedLabel, revolution, splitRatio, record) => {
     record.record.決定者.value = inputLabels[selectedLabel];
-    record.record.背景色.value = labelColor[selectedLabel];
+    record.record.割合.value = splitRatio;
     record.record.回転数.value = revolution;
   };
 
@@ -206,15 +206,22 @@
     getStartButton.appendChild(startButton);
     startButton.disabled = true;
 
+    //お楽しみ要素の非表示
+    kintone.app.record.setFieldShown('筋肉ルーレット', false);
+    kintone.app.record.setFieldShown('ランダムレシオ', false);
+
+    //
+
     //クリックでルーレット開始
     startButton.addEventListener('click', async() => {
+      startButton.disabled = true;
       const getRecord = kintone.app.record.get();
       while (document.getElementById('result')) {
         kintone.app.record.getSpaceElement('circle').removeChild(document.getElementById('result'));
       }
       const revolution = 3600 + 7 * Math.floor( Math.random() * 361);
       const selectedLabel = judgeSelectedLabel(inputLabels.length, revolution, splitRatio);
-      if (getRecord.record.お楽しみボタン.value === 'オン') {
+      if (getRecord.record.筋肉ルーレット.value === 'オン') {
         await startRotating(0, revolution/2, 4000);
         await startRotating(revolution/2, revolution/2, 500);
         await startRotating(revolution/2, revolution, 4000);
@@ -222,7 +229,7 @@
         await startRotating(0, revolution, 8000);
       }
       showResultText(kintone.app.record.getSpaceElement('circle'), inputLabels[selectedLabel], labelColor[selectedLabel]);
-      reflectResult(selectedLabel, revolution, getRecord);
+      reflectResult(selectedLabel, revolution, splitRatio, getRecord);
       kintone.app.record.set(getRecord);
       startButton.disabled = false;
     });
@@ -233,27 +240,41 @@
   ///新規レコード作成画面でテーブルの値が変わったときの処理
   //イベントリスト
   const eventList = [
-    'app.record.edit.show',
     'app.record.edit.change.名前',
     'app.record.edit.change.ラジオボタン_追加',
     'app.record.edit.change.お楽しみボタン',
+    'app.record.edit.change.ランダムレシオ',
     'app.record.create.change.名前',
     'app.record.create.change.ラジオボタン_追加',
-    'app.record.create.change.お楽しみボタン'
+    'app.record.create.change.お楽しみボタン',
+    'app.record.create.change.ランダムレシオ'
   ];
   kintone.events.on(eventList, (event) => {
     const record = event.record;
 
-    if (document.getElementById('roulette') && document.getAnimations()) {
+    if (record.テーブル.value.length >= 1) document.getElementById('btn').disabled = false;
+    if (record.お楽しみボタン.value === 'オン') {
+      //お楽しみ要素の表示
+      kintone.app.record.setFieldShown('筋肉ルーレット', true);
+      kintone.app.record.setFieldShown('ランダムレシオ', true);
+    } else {
+      //お楽しみ要素を全てオフに変更
+      record.筋肉ルーレット.value = 'オフ';
+      record.ランダムレシオ.value = 'オフ';
+      //お楽しみ要素の非表示
+      kintone.app.record.setFieldShown('筋肉ルーレット', false);
+      kintone.app.record.setFieldShown('ランダムレシオ', false);
+    }
+    if (document.getElementById('roulette') && document.getAnimations().length >= 1) {
       const runningAnimation = document.getAnimations();
       runningAnimation.map((element) => element.cancel());
-      document.getElementById('btn').disabled = false;
     }
+
     //何もない状態でグラフが作成されることを防ぐ
     const chkArray = record.テーブル.value.map((key) => key.value.名前.value);
     if (chkArray.includes(undefined)) return event;
 
-    //名前,背景色の配列を空にする
+    //名前,背景色,割合の配列を空にする
     inputLabels.length = 0;
     labelColor.length = 0;
     splitRatio.length = 0;
@@ -274,89 +295,103 @@
     })
 
     //人数で円を分割するための配列作成
-    const dummyRatioArray = (event.record.お楽しみボタン.value === 'オン') ? randomSplitRatio(inputLabels.length) : normalSplitRatio(inputLabels.length);
+    const dummyRatioArray = (event.record.ランダムレシオ.value === 'オン') ? randomSplitRatio(inputLabels.length) : normalSplitRatio(inputLabels.length);
     Object.keys(dummyRatioArray).forEach((key) => {
       splitRatio.push(dummyRatioArray[key]);
     });
 
-    //スペースの要素を取得して、canvasタグを生成
+    //空白スペースの要素を取得
     const getSpaceElement =	kintone.app.record.getSpaceElement('circle');
     while (getSpaceElement.firstChild) {
-      getSpaceElement.removeChild(getSpaceElement.firstChild);
+      getSpaceElement.removeChild(getSpaceElement.firstChild);  //結果表示があれば消す
     }
-    const circleElement = document.createElement('canvas');
-    circleElement.setAttribute('id', 'roulette');
-    showChart(circleElement, inputLabels, splitRatio, labelColor);   //chart.jsよりグラフを作成
+    const circleElement = document.createElement('canvas');  //canvasタグを作成
+    circleElement.setAttribute('id', 'roulette');  //作成したcanvasに id='roulette' を追加
+
     showArrow(getSpaceElement);
+    showChart(circleElement, inputLabels, splitRatio, labelColor);   //chart.jsよりグラフを作成
     //getSpaceElementに子要素を追加
     getSpaceElement.appendChild(circleElement);
+    return event;
   });
+
 
   ////////////////
-  ///レコード詳細画面での動作
-  kintone.events.on('app.record.detail.show', (event) => {
-    //スペースの要素を取得して、canvasタグを生成
-    const getSpaceElement =	kintone.app.record.getSpaceElement('circle');
-    while (getSpaceElement.firstChild) {
-      getSpaceElement.removeChild(getSpaceElement.firstChild);
-    }
-    const circleElement = document.createElement('canvas');
-    circleElement.setAttribute('id', 'roulette');
-    //名前,背景色の配列を空にする
-    inputLabels.splice(0);
-    labelColor.splice(0);
-
-    //
-    Object.keys(event.record.テーブル.value).forEach((key) => {
-      inputLabels.push(event.record.テーブル.value[key].value.名前.value);
-      labelColor.push(backgroundColor[key]);
-    })
-
-    //人数で円を等分割するための配列作成
-    const splitRatio = [];
-    inputLabels.forEach((key) => {
-      splitRatio.push(100 / inputLabels.length);
-    });
-    showArrow(getSpaceElement);
-    showChart(circleElement, inputLabels, splitRatio, labelColor);
-    circleElement.style.transform = `rotate(${event.record.回転数.value}deg)`;
-    getSpaceElement.appendChild(circleElement);
-    showResultText(getSpaceElement, event.record.決定者.value, event.record.背景色.value);
-  });
-
+  ////////////////
+  ///レコード編集画面表示直後の処理
   kintone.events.on('app.record.edit.show', (event) => {
-     //startボタンの作成
-     const getStartButton = kintone.app.record.getSpaceElement('start_button');
-     const startButton = document.createElement('input');
-     startButton.setAttribute('type', 'button');
-     startButton.setAttribute('value', 'Start!');
-     startButton.setAttribute('id', 'btn');
-     getStartButton.appendChild(startButton);
+    const record = event.record;
 
-    //名前,背景色の配列を空にする
-    inputLabels.splice(0);
-    labelColor.splice(0);
+    //startボタンの作成
+    const getStartButton = kintone.app.record.getSpaceElement('start_button');
+    const startButton = document.createElement('input');
+    startButton.setAttribute('type', 'button');
+    startButton.setAttribute('value', 'Start!');
+    startButton.setAttribute('id', 'btn');
+    getStartButton.appendChild(startButton);
 
-    //空の名前,背景色の配列に現在のテーブルの名前と背景色を代入
-    Object.keys(event.record.テーブル.value).forEach((key) => {
-      inputLabels.push(event.record.テーブル.value[key].value.名前.value);
-      labelColor.push(backgroundColor[key]);
-    })
+    if (record.テーブル.value.length >= 1) document.getElementById('btn').disabled = false;
+    if (record.お楽しみボタン.value === 'オン') {
+      //お楽しみ要素の表示
+      kintone.app.record.setFieldShown('筋肉ルーレット', true);
+      kintone.app.record.setFieldShown('ランダムレシオ', true);
+    } else {
+      //お楽しみ要素の非表示
+      kintone.app.record.setFieldShown('筋肉ルーレット', false);
+      kintone.app.record.setFieldShown('ランダムレシオ', false);
+    }
 
-    document.getElementById('roulette').style.transform = `rotate(${event.record.回転数.value}deg)`;
-    showResultText(kintone.app.record.getSpaceElement('circle'), event.record.決定者.value, event.record.背景色.value);
+    //何もない状態でグラフが作成されることを防ぐ
+    const chkArray = record.テーブル.value.map((key) => key.value.名前.value);
+    if (chkArray.includes(undefined)) return event;
+
+    //名前,背景色,割合の配列を空にする
+    inputLabels.length = 0;
+    labelColor.length = 0;
+    splitRatio.length = 0;
+
+    //テーブルの配列を取得
+    const tblDataArray = record.テーブル.value;
+    //ラジオボタンでフィールド変更不可, 名前の配列を取得
+    Object.keys(tblDataArray).forEach((key) => {
+      if (tblDataArray[key].value.ラジオボタン_追加.value === '追加'){
+        tblDataArray[key].value.名前.disabled = false;
+        if (tblDataArray[key].value.名前.value) {
+          inputLabels.push(tblDataArray[key].value.名前.value);   //名前を配列に追加
+          labelColor.push(backgroundColor[key]);   //背景色を配列に追加
+        }
+      } else {
+        tblDataArray[key].value.名前.disabled = true;
+      }
+    });
+
+    //割合フィールドに保存されている文字列をsplitRatioにpush
+    record.割合.value.split(',').map((value) => {
+      splitRatio.push(value);
+    });
+
+    const getSpaceElement = kintone.app.record.getSpaceElement('circle');
+    showArrow(getSpaceElement);
+
+    const circleElement = document.createElement('canvas');  //canvasタグを作成
+    circleElement.setAttribute('id', 'roulette');  //作成したcanvasに id='roulette' を追加
+    showChart(circleElement, inputLabels, splitRatio, labelColor);   //chart.jsよりグラフを作成
+    circleElement.style.transform = `rotate(${record.回転数.value}deg)`;
+    getSpaceElement.appendChild(circleElement);
+
+    showResultText(getSpaceElement, record.決定者.value, labelColor[inputLabels.findIndex(value => value === record.決定者.value)]);
+
 
     //クリックでルーレット開始
     startButton.addEventListener('click', async() => {
       startButton.disabled = true;
+      const getRecord = kintone.app.record.get();
       while (document.getElementById('result')) {
         kintone.app.record.getSpaceElement('circle').removeChild(document.getElementById('result'));
       }
-      const getRecord = kintone.app.record.get();
       const revolution = 3600 + 7 * Math.floor( Math.random() * 361);
-      const splitRatio = (getRecord.record.お楽しみボタン.value === 'オン') ? randomSplitRatio(inputLabels.length) : normalSplitRatio(inputLabels.length);
       const selectedLabel = judgeSelectedLabel(inputLabels.length, revolution, splitRatio);
-      if (getRecord.record.お楽しみボタン.value === 'オン') {
+      if (getRecord.record.筋肉ルーレット.value === 'オン') {
         await startRotating(0, revolution/2, 4000);
         await startRotating(revolution/2, revolution/2, 500);
         await startRotating(revolution/2, revolution, 4000);
@@ -364,10 +399,62 @@
         await startRotating(0, revolution, 8000);
       }
       showResultText(kintone.app.record.getSpaceElement('circle'), inputLabels[selectedLabel], labelColor[selectedLabel]);
-      reflectResult(selectedLabel, revolution, getRecord);
+      reflectResult(selectedLabel, revolution, splitRatio, getRecord);
       kintone.app.record.set(getRecord);
       startButton.disabled = false;
     });
-  })
+  });
 
-  })();
+  ////////////////
+  ///レコード詳細画面での動作
+  kintone.events.on('app.record.detail.show', (event) => {
+    const record = event.record;
+
+    if (record.お楽しみボタン.value === 'オン') {
+      //お楽しみ要素の表示
+      kintone.app.record.setFieldShown('筋肉ルーレット', true);
+      kintone.app.record.setFieldShown('ランダムレシオ', true);
+    } else {
+      //お楽しみ要素の非表示
+      kintone.app.record.setFieldShown('筋肉ルーレット', false);
+      kintone.app.record.setFieldShown('ランダムレシオ', false);
+    }
+
+    //名前,背景色,割合の配列を空にする
+    inputLabels.length = 0;
+    labelColor.length = 0;
+    splitRatio.length = 0;
+
+    //テーブルの配列を取得
+    const tblDataArray = record.テーブル.value;
+    //ラジオボタンでフィールド変更不可, 名前の配列を取得
+    Object.keys(tblDataArray).forEach((key) => {
+      if (tblDataArray[key].value.ラジオボタン_追加.value === '追加'){
+        tblDataArray[key].value.名前.disabled = false;
+        if (tblDataArray[key].value.名前.value) {
+          inputLabels.push(tblDataArray[key].value.名前.value);   //名前を配列に追加
+          labelColor.push(backgroundColor[key]);   //背景色を配列に追加
+        }
+      } else {
+        tblDataArray[key].value.名前.disabled = true;
+      }
+    });
+
+    //割合フィールドに保存されている文字列をsplitRatioにpush
+    record.割合.value.split(',').map((value) => {
+      splitRatio.push(value);
+    });
+
+    const getSpaceElement = kintone.app.record.getSpaceElement('circle');
+    showArrow(getSpaceElement);
+
+    const circleElement = document.createElement('canvas');  //canvasタグを作成
+    circleElement.setAttribute('id', 'roulette');  //作成したcanvasに id='roulette' を追加
+    showChart(circleElement, inputLabels, splitRatio, labelColor);   //chart.jsよりグラフを作成
+    circleElement.style.transform = `rotate(${record.回転数.value}deg)`;
+    getSpaceElement.appendChild(circleElement);
+
+    showResultText(getSpaceElement, record.決定者.value, labelColor[inputLabels.findIndex(value => value === record.決定者.value)]);
+  });
+
+})();
